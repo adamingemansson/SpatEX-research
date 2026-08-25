@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import random
 import time
 from pathlib import Path
@@ -23,7 +24,12 @@ from spatex.models.deterministic import SpatEX
 from spatex.models.factory import build_model
 from spatex.models.wae import SpatEXWAE
 from spatex.structure import load_structure
-from spatex.tensorboard import example_map, latent_pca_figure, spatial_prediction_figure
+from spatex.tensorboard import (
+    example_map,
+    latent_pca_figure,
+    spatial_gene_metrics,
+    spatial_prediction_figure,
+)
 
 
 def _writer(path: Path):
@@ -72,7 +78,16 @@ def validate(
         and latent_every > 0
         and (step == first_step or step % latent_every == 0)
     )
-    examples = example_map(logging, gene_names) if write_images else {}
+    write_gene_scalars = (
+        writer is not None
+        and step is not None
+        and bool(logging.get("slide_gene_scalars", True))
+    )
+    examples = (
+        example_map(logging, gene_names)
+        if write_images or write_gene_scalars
+        else {}
+    )
     latent_values: list[torch.Tensor] = []
     latent_labels: list[str] = []
     for record in records:
@@ -100,19 +115,38 @@ def validate(
         deterministic_pcc.append(float(pearson_correlation(deterministic, target).cpu()))
         deterministic_rmse.append(float(rmse(deterministic, target).cpu()))
         for gene_index in examples.get(record.sample_id, ()):
-            figure = spatial_prediction_figure(
-                inputs.coordinates,
-                target[:, gene_index],
-                prediction[:, gene_index],
-                sample_id=record.sample_id,
-                gene=gene_names[gene_index],
-            )
-            writer.add_figure(
-                f"whole_slide/{record.sample_id}/{gene_names[gene_index]}",
-                figure,
-                step,
-                close=True,
-            )
+            gene = gene_names[gene_index]
+            if write_gene_scalars:
+                roles = {"primary": prediction}
+                if isinstance(model, SpatEXWAE):
+                    roles["deterministic"] = deterministic
+                for role, role_prediction in roles.items():
+                    metrics = spatial_gene_metrics(
+                        target[:, gene_index],
+                        role_prediction[:, gene_index],
+                        pcc_weight=pcc_weight,
+                    )
+                    for name, value in metrics.items():
+                        if math.isfinite(value):
+                            writer.add_scalar(
+                                f"slide_gene/{record.sample_id}/{gene}/{role}/{name}",
+                                value,
+                                step,
+                            )
+            if write_images:
+                figure = spatial_prediction_figure(
+                    inputs.coordinates,
+                    target[:, gene_index],
+                    prediction[:, gene_index],
+                    sample_id=record.sample_id,
+                    gene=gene,
+                )
+                writer.add_figure(
+                    f"whole_slide/{record.sample_id}/{gene}",
+                    figure,
+                    step,
+                    close=True,
+                )
     if write_latent and latent_values:
         figure = latent_pca_figure(
             torch.cat(latent_values),

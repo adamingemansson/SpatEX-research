@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 from collections.abc import Sequence
 
 import numpy as np
@@ -52,6 +53,7 @@ def spatial_prediction_figure(
         else float("nan")
     )
     gene_rmse = float(np.sqrt(np.mean((estimate[finite] - truth[finite]) ** 2)))
+    gene_mae = float(np.mean(np.abs(estimate[finite] - truth[finite])))
 
     figure = _new_figure(figsize=(12, 4))
     axes = figure.subplots(1, 3)
@@ -60,7 +62,7 @@ def spatial_prediction_figure(
         ("Prediction", estimate, "viridis", lower, upper),
         ("Absolute error", error, "magma", 0.0, error_upper),
     )
-    point_size = max(2.0, min(12.0, 18000.0 / max(len(coords), 1)))
+    point_size = max(3.0, min(15.0, 24000.0 / max(len(coords), 1)))
     for axis, (title, values, cmap, vmin, vmax) in zip(axes, panels, strict=True):
         scatter = axis.scatter(
             coords[:, 0],
@@ -78,9 +80,54 @@ def spatial_prediction_figure(
         axis.axis("off")
         figure.colorbar(scatter, ax=axis, fraction=0.046, pad=0.02)
     figure.suptitle(
-        f"{sample_id} | {gene} | PCC={pcc:.3f} | RMSE={gene_rmse:.3f}"
+        f"{sample_id} | {gene} | PCC={pcc:.3f} | "
+        f"RMSE={gene_rmse:.3f} | MAE={gene_mae:.3f}"
     )
     return figure
+
+
+def spatial_gene_metrics(
+    target: torch.Tensor,
+    prediction: torch.Tensor,
+    *,
+    pcc_weight: float,
+) -> dict[str, float]:
+    """Compute one gene's complete-slide metrics."""
+    truth = target.detach().float().reshape(-1)
+    estimate = prediction.detach().float().reshape(-1)
+    finite = torch.isfinite(truth) & torch.isfinite(estimate)
+    if not bool(finite.any()):
+        raise ValueError("slide-gene metric has no finite values")
+
+    truth = truth[finite]
+    estimate = estimate[finite]
+    error = estimate - truth
+    gene_rmse = float(torch.sqrt(torch.mean(error**2)).cpu())
+    gene_mae = float(torch.mean(torch.abs(error)).cpu())
+
+    centered_truth = truth - truth.mean()
+    centered_estimate = estimate - estimate.mean()
+    denominator = float(
+        torch.sqrt(torch.sum(centered_truth**2) * torch.sum(centered_estimate**2)).cpu()
+    )
+    pcc = (
+        float(torch.sum(centered_truth * centered_estimate).cpu()) / denominator
+        if denominator
+        else float("nan")
+    )
+    target_std = float(torch.std(truth, correction=0).cpu())
+    prediction_std = float(torch.std(estimate, correction=0).cpu())
+    std_ratio = prediction_std / target_std if target_std > 0.0 else float("nan")
+    pcc_loss = 1.0 - pcc if math.isfinite(pcc) else float("nan")
+    total = gene_rmse + pcc_weight * pcc_loss
+    return {
+        "pcc": pcc,
+        "pcc_loss": pcc_loss,
+        "rmse": gene_rmse,
+        "mae": gene_mae,
+        "total": total,
+        "std_ratio": std_ratio,
+    }
 
 
 def latent_pca_figure(

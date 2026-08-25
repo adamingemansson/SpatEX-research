@@ -45,14 +45,33 @@ tensorboard:
   image_every: 10000
   latent_pca_every: 10000
   latent_pca_max_points: 5000
+  slide_gene_scalars: true
   spatial_examples:
     - sample_id: INT14
-      genes: [LRP2]
+      genes: [LRP2, UMOD]
     - sample_id: MEND59
-      genes: [KLK3]
+      genes: [KLK3, ACPP]
+    - sample_id: MISC22
+      genes: [SFTPC, COL1A1]
+    - sample_id: MISC3
+      genes: [AQP4, MBP]
     - sample_id: NCBI463
-      genes: [KRT14]
+      genes: [KRT14, KRT10]
+    - sample_id: NCBI471
+      genes: [KRT14, KRT10]
+    - sample_id: NCBI535
+      genes: [SFTPC, DCN]
+    - sample_id: NCBI630
+      genes: [AQP4, MBP]
     - sample_id: NCBI642
-      genes: [ALB]
+      genes: [ALB, ASS1]
+    - sample_id: NCBI643
+      genes: [ALB, GLUL]
+    - sample_id: NCBI695
+      genes: [LRP2, CA9]
+    - sample_id: TENX29
+      genes: [FABP1, OLFM4]
+    - sample_id: TENX41
+      genes: [KLK3, ACTA2]
     - sample_id: TENX92
       genes: [FABP1, COL1A1]
