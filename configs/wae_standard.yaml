@@ -1,0 +1,13 @@
+inherits: base.yaml
+run_name: spatex_wae_standard
+model:
+  kind: wae
+  prior: standard
+  latent_dim: 64
+  wae_hidden_dim: 1024
+  mmd_weight: 0.1
+  deterministic_weight: 1.0
+  residual_mode: antithetic_zero_mean
+  posterior_conditioning: none
+  freeze_deterministic_backbone: false
+

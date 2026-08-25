@@ -1,0 +1,58 @@
+seed: 10
+device: cuda
+
+data:
+  manifest: /external/spatex_prepared/manifest.json
+  structure: /external/spatex_prepared/centered_gene_structure.pt
+  field_size: 512
+
+model:
+  image_feature_dim: 1536
+  context_dim: 512
+  image_proj_dim: 256
+  gex_proj_dim: 256
+  coord_dim: 64
+  ring_embed_dim: 16
+  modality_flag_dim: 16
+  n_heads: 8
+  n_blocks: 4
+  dense_threshold: 256
+  spatial_k: 10
+  decoder_hidden_dim: 1024
+  dropout: 0.1
+  gene_structure_hidden_dim: 64
+  refinement_k: 6
+  refinement_hidden_dim: 256
+  refinement_gex_dim: 256
+
+training:
+  output_root: /external/spatex_runs
+  total_steps: 100000000
+  max_hours: 8
+  learning_rate: 0.0001
+  weight_decay: 0.01
+  pcc_weight: 0.1
+  validation_every: 2000
+  checkpoint_every: 2000
+
+evaluation:
+  split: validation
+  wae_draws: 8
+
+tensorboard:
+  scalar_every: 50
+  first_diagnostic_step: 2000
+  image_every: 10000
+  latent_pca_every: 10000
+  latent_pca_max_points: 5000
+  spatial_examples:
+    - sample_id: INT14
+      genes: [LRP2]
+    - sample_id: MEND59
+      genes: [KLK3]
+    - sample_id: NCBI463
+      genes: [KRT14]
+    - sample_id: NCBI642
+      genes: [ALB]
+    - sample_id: TENX92
+      genes: [FABP1, COL1A1]

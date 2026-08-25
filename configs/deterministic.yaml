@@ -1,0 +1,5 @@
+inherits: base.yaml
+run_name: spatex
+model:
+  kind: deterministic
+

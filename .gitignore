@@ -1,0 +1,22 @@
+.DS_Store
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+build/
+dist/
+*.egg-info/
+
+# Data and generated outputs are external by design.
+data/
+artifacts/
+checkpoints/
+results/
+runs/
+tensorboard/
+*.h5ad
+*.npz
+*.pt
+
+
+.Rhistory
