@@ -17,6 +17,7 @@ from spatex.models.factory import build_model
 from spatex.models.wae import SpatEXWAE
 from spatex.panels import load_panels
 from spatex.structure import load_structure
+from spatex.structured_metrics import structured_panel_metrics
 from spatex.tensorboard import example_map
 
 
@@ -105,7 +106,14 @@ def evaluate(
         path_reports: dict[str, object] = {}
         for path_name, prediction in predictions.items():
             metrics, genes = panel_metrics(prediction, target, panels)
-            path_reports[path_name] = {"panels": metrics}
+            structured = structured_panel_metrics(
+                prediction.detach().cpu().numpy(),
+                target.detach().cpu().numpy(),
+                inputs.coordinates.detach().cpu().numpy(),
+                structure.per_gene_scale.numpy(),
+                panels,
+            )
+            path_reports[path_name] = {"panels": metrics, "structured": structured}
             for panel_name, values in metrics.items():
                 aggregate.setdefault(path_name, {}).setdefault(panel_name, []).append(values)
             per_gene.setdefault(path_name, []).append(genes["all_genes"])

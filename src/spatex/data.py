@@ -6,6 +6,7 @@ Expression targets are returned separately from the H&E-only ``InputBatch``.
 from __future__ import annotations
 
 import json
+from collections import OrderedDict
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -129,3 +130,25 @@ class SlideRecord:
             query_mask=torch.ones(n, dtype=torch.bool, device=device),
         )
         return inputs, torch.from_numpy(self.expression[indices]).to(device)
+
+
+class SlideCache:
+    """Keep a bounded least-recently-used set of decompressed slides."""
+
+    def __init__(self, n_genes: int, capacity: int = 2) -> None:
+        if capacity < 1:
+            raise ValueError("slide cache capacity must be positive")
+        self.n_genes = int(n_genes)
+        self.capacity = int(capacity)
+        self._records: OrderedDict[Path, SlideRecord] = OrderedDict()
+
+    def get(self, spec: SlideSpec) -> SlideRecord:
+        """Load one slide or return its cached record."""
+        if spec.path in self._records:
+            self._records.move_to_end(spec.path)
+            return self._records[spec.path]
+        record = SlideRecord.load(spec, self.n_genes)
+        self._records[spec.path] = record
+        while len(self._records) > self.capacity:
+            self._records.popitem(last=False)
+        return record

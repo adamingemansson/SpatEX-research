@@ -18,7 +18,7 @@ import torch
 
 from spatex.checkpoint import load_checkpoint, save_checkpoint
 from spatex.config import load_config
-from spatex.data import PreparedManifest, SlideRecord
+from spatex.data import PreparedManifest, SlideCache, SlideSpec
 from spatex.losses import point_loss
 from spatex.metrics import macro_gene_pcc, rmse
 from spatex.models.deterministic import SpatEX
@@ -46,7 +46,8 @@ def _writer(path: Path):
 @torch.no_grad()
 def validate(
     model: torch.nn.Module,
-    records: list[SlideRecord],
+    specs: tuple[SlideSpec, ...],
+    n_genes: int,
     device: torch.device,
     wae_draws: int,
     *,
@@ -91,7 +92,9 @@ def validate(
     )
     latent_values: list[torch.Tensor] = []
     latent_labels: list[str] = []
-    for record in records:
+    validation_cache = SlideCache(n_genes, capacity=1)
+    for spec in specs:
+        record = validation_cache.get(spec)
         inputs, target = record.whole_slide(device)
         if isinstance(model, SpatEXWAE):
             paths = model.sample(inputs, wae_draws)
@@ -101,7 +104,7 @@ def validate(
                 latent = model.posterior(target, paths["context"])
                 per_slide = max(
                     1,
-                    int(logging.get("latent_pca_max_points", 5000)) // len(records),
+                    int(logging.get("latent_pca_max_points", 5000)) // len(specs),
                 )
                 indices = torch.linspace(
                     0, len(latent) - 1, min(per_slide, len(latent)), device=device
@@ -200,19 +203,16 @@ def train(config_path: str | Path, resume: str | Path | None = None) -> Path:
     (run_root / "checkpoints").mkdir(parents=True, exist_ok=False)
     (run_root / "config.json").write_text(json.dumps(config, indent=2) + "\n")
     writer = _writer(run_root / "tensorboard")
-    # Load aligned records once; field sampling then stays in memory.
-    train_records = [
-        SlideRecord.load(spec, len(manifest.gene_names))
-        for spec in manifest.for_split("train")
-    ]
-    validation_records = [
-        SlideRecord.load(spec, len(manifest.gene_names))
-        for spec in manifest.for_split("validation")
-    ]
-    if not train_records or not validation_records:
+    train_specs = manifest.for_split("train")
+    validation_specs = manifest.for_split("validation")
+    if not train_specs or not validation_specs:
         raise ValueError("training and validation slides are both required")
     generator = np.random.default_rng(seed + start_step)
     training = config["training"]
+    slide_cache = SlideCache(
+        len(manifest.gene_names), int(training.get("slide_cache_size", 2))
+    )
+    steps_per_slide = max(1, int(training.get("steps_per_slide", 20)))
     field_size = int(config["data"]["field_size"])
     total_steps = int(training["total_steps"])
     deadline = time.monotonic() + 3600.0 * float(training["max_hours"])
@@ -225,7 +225,9 @@ def train(config_path: str | Path, resume: str | Path | None = None) -> Path:
     for step in range(start_step + 1, total_steps + 1):
         if time.monotonic() >= deadline:
             break
-        record = train_records[int(generator.integers(len(train_records)))]
+        if (step - start_step - 1) % steps_per_slide == 0:
+            active_spec = train_specs[int(generator.integers(len(train_specs)))]
+        record = slide_cache.get(active_spec)
         # Each step samples one local spatial field from one training slide.
         inputs, target = record.field(field_size, generator, device)
         optimizer.zero_grad(set_to_none=True)
@@ -264,7 +266,8 @@ def train(config_path: str | Path, resume: str | Path | None = None) -> Path:
             # Model selection uses the same complete-slide path used at inference.
             validation = validate(
                 model,
-                validation_records,
+                validation_specs,
+                len(manifest.gene_names),
                 device,
                 int(config["evaluation"]["wae_draws"]),
                 pcc_weight=float(training["pcc_weight"]),

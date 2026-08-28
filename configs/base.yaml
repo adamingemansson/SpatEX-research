@@ -40,6 +40,8 @@ training:
   validation_every: 2000
   checkpoint_every: 2000
   cpu_threads: 6
+  slide_cache_size: 2
+  steps_per_slide: 20
 
 evaluation:
   split: validation
