@@ -19,7 +19,8 @@ import torch
 from spatex.checkpoint import load_checkpoint, save_checkpoint
 from spatex.config import load_config
 from spatex.data import PreparedManifest, SlideRecord
-from spatex.losses import pearson_correlation, point_loss, rmse
+from spatex.losses import point_loss
+from spatex.metrics import macro_gene_pcc, rmse
 from spatex.models.deterministic import SpatEX
 from spatex.models.factory import build_model
 from spatex.models.wae import SpatEXWAE
@@ -55,7 +56,7 @@ def validate(
     gene_names: tuple[str, ...] = (),
     logging: dict | None = None,
 ) -> dict[str, float]:
-    """Average flattened PCC and RMSE across complete validation slides."""
+    """Average gene-wise spatial PCC and RMSE across validation slides."""
     model.eval()
     pcc_values: list[float] = []
     rmse_values: list[float] = []
@@ -110,9 +111,9 @@ def validate(
         else:
             prediction = model(inputs)
             deterministic = prediction
-        pcc_values.append(float(pearson_correlation(prediction, target).cpu()))
+        pcc_values.append(float(macro_gene_pcc(prediction, target).cpu()))
         rmse_values.append(float(rmse(prediction, target).cpu()))
-        deterministic_pcc.append(float(pearson_correlation(deterministic, target).cpu()))
+        deterministic_pcc.append(float(macro_gene_pcc(deterministic, target).cpu()))
         deterministic_rmse.append(float(rmse(deterministic, target).cpu()))
         for gene_index in examples.get(record.sample_id, ()):
             gene = gene_names[gene_index]
@@ -219,7 +220,7 @@ def train(config_path: str | Path, resume: str | Path | None = None) -> Path:
     checkpoint_every = int(training["checkpoint_every"])
     logging = config.get("tensorboard", {})
     scalar_every = max(1, int(logging.get("scalar_every", 50)))
-    best_rmse = float("inf")
+    best_validation = float("inf")
     final_step = start_step
     for step in range(start_step + 1, total_steps + 1):
         if time.monotonic() >= deadline:
@@ -235,7 +236,10 @@ def train(config_path: str | Path, resume: str | Path | None = None) -> Path:
         elif isinstance(model, SpatEX):
             prediction = model(inputs)
             loss, metrics = point_loss(
-                prediction, target, float(training["pcc_weight"])
+                prediction,
+                target,
+                float(training["pcc_weight"]),
+                pcc_mode=str(training.get("pcc_mode", "gene_wise")),
             )
         else:
             raise TypeError(type(model))
@@ -273,8 +277,8 @@ def train(config_path: str | Path, resume: str | Path | None = None) -> Path:
             if writer is not None:
                 for name, value in validation.items():
                     writer.add_scalar(f"validation/{name}", value, step)
-            if validation["rmse"] < best_rmse:
-                best_rmse = validation["rmse"]
+            if validation["total"] < best_validation:
+                best_validation = validation["total"]
                 save_checkpoint(
                     run_root / "checkpoints" / "best.pt",
                     model,

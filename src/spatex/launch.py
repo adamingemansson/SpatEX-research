@@ -111,6 +111,15 @@ def launch_suite(
         log_handle = log_path.open("w")
         environment = os.environ.copy()
         environment["CUDA_VISIBLE_DEVICES"] = str(arm["gpu"])
+        threads = str(load_config(str(arm["config"]))["training"].get("cpu_threads", 6))
+        for name in (
+            "SCILIFESTDL_CPU_THREADS",
+            "OMP_NUM_THREADS",
+            "MKL_NUM_THREADS",
+            "OPENBLAS_NUM_THREADS",
+            "NUMEXPR_NUM_THREADS",
+        ):
+            environment[name] = threads
         process = subprocess.Popen(
             [sys.executable, "-u", "-m", "spatex.train", "--config", str(arm["config"])],
             env=environment,

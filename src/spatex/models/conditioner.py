@@ -123,9 +123,13 @@ class ImageSpatialConditioner(nn.Module):
         gex_proj_dim: int = 256,
         ring_embed_dim: int = 16,
         modality_flag_dim: int = 16,
+        use_coordinates: bool = True,
+        use_spatial_attention: bool = True,
     ) -> None:
         super().__init__()
         self.image_feature_dim = int(image_feature_dim)
+        self.use_coordinates = bool(use_coordinates)
+        self.use_spatial_attention = bool(use_spatial_attention)
         self.image_projection = nn.Sequential(
             nn.LayerNorm(image_feature_dim),
             nn.Linear(image_feature_dim, image_proj_dim),
@@ -153,7 +157,7 @@ class ImageSpatialConditioner(nn.Module):
             GeometryAttentionBlock(
                 context_dim, n_heads, dropout, dense_threshold, spatial_k
             )
-            for _ in range(n_blocks)
+            for _ in range(n_blocks if self.use_spatial_attention else 0)
         )
         self.final_norm = nn.LayerNorm(context_dim)
 
@@ -166,6 +170,8 @@ class ImageSpatialConditioner(nn.Module):
         )
         encoded = self.image_projection(image)
         coordinate_features = self.coordinates(inputs.coordinates)
+        if not self.use_coordinates:
+            coordinate_features = torch.zeros_like(coordinate_features)
         available = inputs.image_available[:, None].to(encoded.dtype)
         zero_gex = torch.zeros(
             len(encoded), self.zero_gex_projection[0].normalized_shape[0],

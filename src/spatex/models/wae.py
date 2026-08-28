@@ -186,8 +186,13 @@ class SpatEXWAE(nn.Module):
     ) -> tuple[torch.Tensor, dict[str, torch.Tensor]]:
         """Combine reconstruction, deterministic, and prior-matching losses."""
         outputs = self.posterior_reconstruction(inputs, target)
-        reconstruction, recon_metrics = point_loss(outputs["prediction"], target, pcc_weight)
-        deterministic_loss, _ = point_loss(outputs["expression"], target, pcc_weight)
+        pcc_mode = str(config.get("training", {}).get("pcc_mode", "gene_wise"))
+        reconstruction, recon_metrics = point_loss(
+            outputs["prediction"], target, pcc_weight, pcc_mode=pcc_mode
+        )
+        deterministic_loss, _ = point_loss(
+            outputs["expression"], target, pcc_weight, pcc_mode=pcc_mode
+        )
         mean, scale = self.prior_parameters(outputs["context"])
         # Compare posterior samples with the chosen prior in standardized space.
         standardized = (outputs["latent"] - mean) / scale.clamp_min(1e-6)

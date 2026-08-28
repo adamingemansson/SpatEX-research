@@ -40,6 +40,10 @@ def config(kind: str, prior: str = "standard", conditioning: str = "none") -> di
             "residual_mode": "antithetic_zero_mean",
             "posterior_conditioning": conditioning,
             "freeze_deterministic_backbone": False,
+            "use_coordinates": True,
+            "use_spatial_attention": True,
+            "use_within_refiner": True,
+            "use_between_refiner": True,
         }
     }
 
@@ -91,7 +95,38 @@ def test_parallel_gated_deterministic_forward(structure, inputs):
     assert result["gates"].shape == (2,)
     assert torch.isfinite(result["expression"]).all()
     result["expression"].sum().backward()
-    assert model.composition_logits.grad is not None
+    assert model.within_gate_logit.grad is not None
+    assert model.between_gate_logit.grad is not None
+
+
+@pytest.mark.parametrize(
+    ("coordinates", "attention", "within", "between", "expected_gates"),
+    [
+        (False, False, False, False, (0.0, 0.0)),
+        (True, True, True, False, (0.5, 0.0)),
+        (True, True, False, True, (0.0, 0.5)),
+    ],
+)
+def test_deterministic_ablation_switches(
+    structure, inputs, coordinates, attention, within, between, expected_gates
+):
+    """Ablation flags must remove the requested paths exactly."""
+    cfg = config("deterministic")
+    cfg["model"].update(
+        use_coordinates=coordinates,
+        use_spatial_attention=attention,
+        use_within_refiner=within,
+        use_between_refiner=between,
+    )
+    model = build_model(cfg, structure).eval()
+    result = model.predict_all(inputs)
+    torch.testing.assert_close(
+        result["gates"], torch.tensor(expected_gates), rtol=0.0, atol=0.0
+    )
+    if not within:
+        torch.testing.assert_close(result["within"], result["base"])
+    if not between:
+        torch.testing.assert_close(result["between"], result["base"])
 
 
 @pytest.mark.parametrize(

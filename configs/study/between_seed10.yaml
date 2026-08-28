@@ -1,0 +1,10 @@
+inherits: ../deterministic.yaml
+run_name: spatial_between_seed10
+seed: 10
+model:
+  use_coordinates: true
+  use_spatial_attention: true
+  use_within_refiner: false
+  use_between_refiner: true
+training:
+  max_hours: 8

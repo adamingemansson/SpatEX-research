@@ -23,6 +23,8 @@ class SpatEX(nn.Module):
         model = config["model"]
         n_genes = len(structure.gene_names)
         context_dim = int(model["context_dim"])
+        self.use_within_refiner = bool(model.get("use_within_refiner", True))
+        self.use_between_refiner = bool(model.get("use_between_refiner", True))
         self.gene_names = structure.gene_names
         self.conditioner = ImageSpatialConditioner(
             image_feature_dim=int(model["image_feature_dim"]),
@@ -37,6 +39,8 @@ class SpatEX(nn.Module):
             gex_proj_dim=int(model.get("gex_proj_dim", 256)),
             ring_embed_dim=int(model.get("ring_embed_dim", 16)),
             modality_flag_dim=int(model.get("modality_flag_dim", 16)),
+            use_coordinates=bool(model.get("use_coordinates", True)),
+            use_spatial_attention=bool(model.get("use_spatial_attention", True)),
         )
         hidden = int(model["decoder_hidden_dim"])
         self.decoder = nn.Sequential(
@@ -55,7 +59,14 @@ class SpatEX(nn.Module):
             hidden_dim=int(model["refinement_hidden_dim"]),
             k_neighbors=int(model["refinement_k"]),
         )
-        self.composition_logits = nn.Parameter(torch.zeros(2))
+        self.within_gate_logit = nn.Parameter(torch.zeros(()))
+        self.between_gate_logit = nn.Parameter(torch.zeros(()))
+        if not self.use_within_refiner:
+            self.within.requires_grad_(False)
+            self.within_gate_logit.requires_grad_(False)
+        if not self.use_between_refiner:
+            self.between.requires_grad_(False)
+            self.between_gate_logit.requires_grad_(False)
 
     def encode(self, inputs: InputBatch) -> torch.Tensor:
         """Return the image-conditioned spatial context for every spot."""
@@ -65,9 +76,23 @@ class SpatEX(nn.Module):
         """Return the final prediction and intermediate refinement paths."""
         context = self.encode(inputs)
         base = self.decoder(context)
-        within = self.within(base)
-        between = self.between(base, context, inputs.coordinates)
-        gates = torch.sigmoid(self.composition_logits)
+        within = self.within(base) if self.use_within_refiner else base
+        between = (
+            self.between(base, context, inputs.coordinates)
+            if self.use_between_refiner
+            else base
+        )
+        within_gate = (
+            torch.sigmoid(self.within_gate_logit)
+            if self.use_within_refiner
+            else base.new_zeros(())
+        )
+        between_gate = (
+            torch.sigmoid(self.between_gate_logit)
+            if self.use_between_refiner
+            else base.new_zeros(())
+        )
+        gates = torch.stack((within_gate, between_gate))
         # Both refiners learn residual corrections to the same base prediction.
         combined = base + gates[0] * (within - base) + gates[1] * (between - base)
         query = inputs.query_mask

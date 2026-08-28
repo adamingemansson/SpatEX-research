@@ -1,0 +1,10 @@
+inherits: ../deterministic.yaml
+run_name: spatex_full_seed10
+seed: 10
+model:
+  use_coordinates: true
+  use_spatial_attention: true
+  use_within_refiner: true
+  use_between_refiner: true
+training:
+  max_hours: 8

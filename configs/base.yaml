@@ -24,6 +24,10 @@ model:
   refinement_k: 6
   refinement_hidden_dim: 256
   refinement_gex_dim: 256
+  use_coordinates: true
+  use_spatial_attention: true
+  use_within_refiner: true
+  use_between_refiner: true
 
 training:
   output_root: /external/spatex_runs
@@ -32,12 +36,15 @@ training:
   learning_rate: 0.0001
   weight_decay: 0.01
   pcc_weight: 0.1
+  pcc_mode: gene_wise
   validation_every: 2000
   checkpoint_every: 2000
+  cpu_threads: 6
 
 evaluation:
   split: validation
   wae_draws: 8
+  panel_file: /data/adam.ingemansson/SpatEX-data/expanded_v1/train_gene_panels.json
 
 tensorboard:
   scalar_every: 50

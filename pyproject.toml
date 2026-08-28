@@ -27,6 +27,8 @@ spatex-train = "spatex.train:main"
 spatex-launch = "spatex.launch:main"
 spatex-evaluate = "spatex.evaluate:main"
 spatex-predict = "spatex.infer:main"
+spatex-fit-panels = "spatex.panels:main"
+spatex-study = "spatex.study:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

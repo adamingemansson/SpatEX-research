@@ -1,0 +1,10 @@
+inherits: ../deterministic.yaml
+run_name: local_uni2_mlp_seed10
+seed: 10
+model:
+  use_coordinates: false
+  use_spatial_attention: false
+  use_within_refiner: false
+  use_between_refiner: false
+training:
+  max_hours: 8

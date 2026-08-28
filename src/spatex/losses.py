@@ -1,12 +1,10 @@
-"""Point-prediction and WAE-MMD training losses.
-
-The point objective combines global flattened PCC with RMSE. The WAE uses an
-inverse-multiquadratic MMD term for prior matching.
-"""
+"""Point-prediction and WAE-MMD training losses."""
 
 from __future__ import annotations
 
 import torch
+
+from spatex.metrics import flattened_pcc, macro_gene_pcc
 
 
 def rmse(prediction: torch.Tensor, target: torch.Tensor, eps: float = 0.0) -> torch.Tensor:
@@ -18,23 +16,28 @@ def rmse(prediction: torch.Tensor, target: torch.Tensor, eps: float = 0.0) -> to
 def pearson_correlation(
     prediction: torch.Tensor, target: torch.Tensor, eps: float = 1e-8
 ) -> torch.Tensor:
-    """Compute PCC after flattening the supplied spot-by-gene tensors."""
-    prediction = prediction.reshape(-1)
-    target = target.reshape(-1)
-    pred_centered = prediction - prediction.mean()
-    target_centered = target - target.mean()
-    denominator = torch.sqrt(
-        torch.sum(pred_centered**2) * torch.sum(target_centered**2)
-    )
-    return torch.sum(pred_centered * target_centered) / denominator.clamp_min(eps)
+    """Compatibility wrapper for flattened PCC."""
+    del eps
+    return flattened_pcc(prediction, target)
 
 
 def point_loss(
-    prediction: torch.Tensor, target: torch.Tensor, pcc_weight: float
+    prediction: torch.Tensor,
+    target: torch.Tensor,
+    pcc_weight: float,
+    pcc_mode: str = "gene_wise",
 ) -> tuple[torch.Tensor, dict[str, torch.Tensor]]:
     """Combine RMSE with a weighted PCC loss and expose each component."""
     rmse_value = rmse(prediction, target)
-    pcc_loss = 1.0 - pearson_correlation(prediction, target)
+    if pcc_mode == "gene_wise":
+        correlation = macro_gene_pcc(prediction, target)
+    elif pcc_mode == "flattened":
+        correlation = flattened_pcc(prediction, target)
+    else:
+        raise ValueError(f"unsupported pcc_mode: {pcc_mode}")
+    if not bool(torch.isfinite(correlation)):
+        correlation = prediction.new_zeros(())
+    pcc_loss = 1.0 - correlation
     total = rmse_value + float(pcc_weight) * pcc_loss
     return total, {"rmse": rmse_value, "pcc_loss": pcc_loss, "total": total}
 
