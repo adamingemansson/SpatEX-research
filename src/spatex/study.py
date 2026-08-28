@@ -31,6 +31,13 @@ ARMS = (
 
 def _alive(pid: int) -> bool:
     """Return whether a process still exists."""
+    stat = Path(f"/proc/{pid}/stat")
+    if stat.is_file():
+        try:
+            if stat.read_text().split()[2] == "Z":
+                return False
+        except (IndexError, OSError):
+            pass
     try:
         os.kill(pid, 0)
         return True
@@ -179,6 +186,69 @@ def evaluate_suite(root: Path, panel_file: Path, gpus: list[str]) -> Path:
     return output_root
 
 
+def _wait_for_jobs(
+    jobs: dict[str, tuple[int, Path | None]], poll_seconds: int, label: str
+) -> None:
+    """Wait for detached jobs and fail if a required output is missing."""
+    while True:
+        running = [name for name, (pid, _) in jobs.items() if _alive(pid)]
+        print(
+            f"{time.strftime('%Y-%m-%d %H:%M:%S %Z')} "
+            f"{label}: {len(running)}/{len(jobs)} running",
+            flush=True,
+        )
+        if not running:
+            break
+        time.sleep(poll_seconds)
+    missing = [
+        name
+        for name, (_, output) in jobs.items()
+        if output is not None and not output.is_file()
+    ]
+    if missing:
+        raise RuntimeError(f"{label} failed or incomplete: {', '.join(missing)}")
+
+
+def finalize_suite(
+    root: Path,
+    panel_file: Path,
+    gpus: list[str],
+    poll_seconds: int = 60,
+) -> Path:
+    """Wait for training, evaluate every arm, and export presentation figures."""
+    suite = json.loads((root / "suite.json").read_text())
+    training_jobs: dict[str, tuple[int, Path | None]] = {}
+    for arm in suite["arms"]:
+        name = str(arm["arm"])
+        pid = int((root / "control" / f"{name}.pid").read_text())
+        training_jobs[name] = (pid, None)
+    _wait_for_jobs(training_jobs, poll_seconds, "training")
+
+    evaluation_root = evaluate_suite(root, panel_file, gpus)
+    evaluation_status = json.loads((evaluation_root / "status.json").read_text())
+    evaluation_jobs = {
+        name: (int(values["pid"]), Path(str(values["output"])))
+        for name, values in evaluation_status.items()
+    }
+    _wait_for_jobs(evaluation_jobs, poll_seconds, "evaluation")
+
+    from spatex.presentation import _reports, export
+
+    arguments = [
+        f"{name}={values['output']}"
+        for name, values in evaluation_status.items()
+    ]
+    presentation_root = root / f"presentation_{time.strftime('%Y%m%dT%H%M%SZ', time.gmtime())}"
+    export(_reports(arguments), presentation_root)
+    result = {
+        "evaluation_root": str(evaluation_root),
+        "presentation_root": str(presentation_root),
+    }
+    (root / "finalization.json").write_text(json.dumps(result, indent=2) + "\n")
+    print(json.dumps(result, indent=2), flush=True)
+    return presentation_root
+
+
 def main() -> None:
     """Run one presentation-study operation."""
     parser = argparse.ArgumentParser(description=__doc__)
@@ -196,6 +266,11 @@ def main() -> None:
     evaluate_parser.add_argument("--root", required=True)
     evaluate_parser.add_argument("--panel-file", required=True)
     evaluate_parser.add_argument("--gpus", required=True)
+    finalize_parser = subparsers.add_parser("finalize")
+    finalize_parser.add_argument("--root", required=True)
+    finalize_parser.add_argument("--panel-file", required=True)
+    finalize_parser.add_argument("--gpus", required=True)
+    finalize_parser.add_argument("--poll-seconds", type=int, default=60)
     args = parser.parse_args()
     if args.command == "launch":
         root = launch(
@@ -209,11 +284,18 @@ def main() -> None:
         print(root)
     elif args.command == "monitor":
         monitor(Path(args.root).expanduser().resolve())
-    else:
+    elif args.command == "evaluate":
         evaluate_suite(
             Path(args.root).expanduser().resolve(),
             Path(args.panel_file).expanduser().resolve(),
             [value.strip() for value in args.gpus.split(",")],
+        )
+    else:
+        finalize_suite(
+            Path(args.root).expanduser().resolve(),
+            Path(args.panel_file).expanduser().resolve(),
+            [value.strip() for value in args.gpus.split(",")],
+            max(5, args.poll_seconds),
         )
 
 
