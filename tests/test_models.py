@@ -99,6 +99,24 @@ def test_parallel_gated_deterministic_forward(structure, inputs):
     assert model.between_gate_logit.grad is not None
 
 
+def test_legacy_parallel_gated_contract(structure, inputs):
+    """The legacy arm restores the original gate and module contracts."""
+    cfg = config("deterministic")
+    cfg["model"].update(
+        legacy_parallel_gated=True,
+        gate_initial_weight=0.1,
+        refinement_steps=3,
+    )
+    model = build_model(cfg, structure).eval()
+    result = model.predict_all(inputs)
+    torch.testing.assert_close(
+        result["gates"], torch.tensor([0.1, 0.1]), rtol=1e-6, atol=1e-6
+    )
+    assert model.between.gene_encoder.bias is None
+    assert result["expression"].shape == (inputs.n_queries, 9)
+    assert torch.isfinite(result["expression"]).all()
+
+
 @pytest.mark.parametrize(
     ("coordinates", "attention", "within", "between", "expected_gates"),
     [
