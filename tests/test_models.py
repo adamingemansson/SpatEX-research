@@ -9,6 +9,7 @@ import torch
 
 from spatex.inputs import InputBatch
 from spatex.models.factory import build_model
+from spatex.models.legacy_exact import LegacyParallelGatedSpatEX
 from spatex.models.wae import SpatEXWAE
 from spatex.structure import CenteredGeneStructure
 
@@ -100,21 +101,30 @@ def test_parallel_gated_deterministic_forward(structure, inputs):
 
 
 def test_legacy_parallel_gated_contract(structure, inputs):
-    """The legacy arm restores the original gate and module contracts."""
+    """The legacy arm preserves its parameter tree and query-only decoder."""
     cfg = config("deterministic")
     cfg["model"].update(
         legacy_parallel_gated=True,
-        gate_initial_weight=0.1,
         refinement_steps=3,
     )
     model = build_model(cfg, structure).eval()
+    assert isinstance(model, LegacyParallelGatedSpatEX)
     result = model.predict_all(inputs)
     torch.testing.assert_close(
         result["gates"], torch.tensor([0.1, 0.1]), rtol=1e-6, atol=1e-6
     )
-    assert model.between.gene_encoder.bias is None
+    assert model.image_conditioner.gene_encoder.projection.bias is None
+    assert model.spatial_refiner.gene_encoder.projection.bias is None
+    assert model.composition_gate_logits.shape == (2,)
+    assert result["context"].shape[0] == inputs.n_queries
+    assert result["base"].shape[0] == inputs.n_queries
     assert result["expression"].shape == (inputs.n_queries, 9)
     assert torch.isfinite(result["expression"]).all()
+    keys = set(model.state_dict())
+    assert "image_conditioner.gene_encoder.projection.weight" in keys
+    assert "coexpression_refinement.refine.3.weight" in keys
+    assert "spatial_refiner.attention_mlp.3.weight" in keys
+    assert "composition_gate_logits" in keys
 
 
 @pytest.mark.parametrize(

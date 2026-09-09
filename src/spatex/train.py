@@ -23,6 +23,7 @@ from spatex.losses import point_loss
 from spatex.metrics import macro_gene_pcc, rmse
 from spatex.models.deterministic import SpatEX
 from spatex.models.factory import build_model
+from spatex.models.legacy_exact import LegacyParallelGatedSpatEX
 from spatex.models.wae import SpatEXWAE
 from spatex.structure import load_structure
 from spatex.tensorboard import (
@@ -235,7 +236,7 @@ def train(config_path: str | Path, resume: str | Path | None = None) -> Path:
             loss, metrics = model.training_loss(
                 inputs, target, float(training["pcc_weight"]), config
             )
-        elif isinstance(model, SpatEX):
+        elif isinstance(model, (SpatEX, LegacyParallelGatedSpatEX)):
             prediction = model(inputs)
             loss, metrics = point_loss(
                 prediction,
@@ -248,7 +249,8 @@ def train(config_path: str | Path, resume: str | Path | None = None) -> Path:
         if not bool(torch.isfinite(loss)):
             raise FloatingPointError(f"non-finite loss at step {step}")
         loss.backward()
-        grad_norm = torch.nn.utils.clip_grad_norm_(model.parameters(), 5.0)
+        clip_norm = float(training.get("gradient_clip_norm", 5.0))
+        grad_norm = torch.nn.utils.clip_grad_norm_(model.parameters(), clip_norm)
         optimizer.step()
         final_step = step
         if writer is not None and (step == 1 or step % scalar_every == 0):

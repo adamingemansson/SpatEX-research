@@ -3,12 +3,8 @@ run_name: legacy_parallel_gated_seed10
 seed: 10
 model:
   legacy_parallel_gated: true
-  gate_initial_weight: 0.1
   refinement_steps: 1
-  use_coordinates: true
-  use_spatial_attention: true
-  use_within_refiner: true
-  use_between_refiner: true
 training:
   max_hours: 8
   steps_per_slide: 1
+  gradient_clip_norm: 1.0

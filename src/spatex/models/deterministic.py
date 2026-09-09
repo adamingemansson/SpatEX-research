@@ -13,10 +13,6 @@ from torch import nn
 
 from spatex.inputs import InputBatch
 from spatex.models.conditioner import ImageSpatialConditioner
-from spatex.models.legacy import (
-    LegacyBetweenSpotRefiner,
-    LegacyImageSpatialConditioner,
-)
 from spatex.models.refinement import BetweenSpotRefiner, WithinGeneRefiner
 from spatex.structure import CenteredGeneStructure
 
@@ -32,7 +28,6 @@ class SpatEX(nn.Module):
         self.use_within_refiner = bool(model.get("use_within_refiner", True))
         self.use_between_refiner = bool(model.get("use_between_refiner", True))
         self.gene_names = structure.gene_names
-        self.legacy_parallel_gated = bool(model.get("legacy_parallel_gated", False))
         conditioner_arguments = dict(
             image_feature_dim=int(model["image_feature_dim"]),
             image_proj_dim=int(model["image_proj_dim"]),
@@ -47,38 +42,22 @@ class SpatEX(nn.Module):
             ring_embed_dim=int(model.get("ring_embed_dim", 16)),
             modality_flag_dim=int(model.get("modality_flag_dim", 16)),
         )
-        if self.legacy_parallel_gated:
-            self.conditioner = LegacyImageSpatialConditioner(**conditioner_arguments)
-        else:
-            self.conditioner = ImageSpatialConditioner(
-                **conditioner_arguments,
-                use_coordinates=bool(model.get("use_coordinates", True)),
-                use_spatial_attention=bool(model.get("use_spatial_attention", True)),
-            )
+        self.conditioner = ImageSpatialConditioner(
+            **conditioner_arguments,
+            use_coordinates=bool(model.get("use_coordinates", True)),
+            use_spatial_attention=bool(model.get("use_spatial_attention", True)),
+        )
         hidden = int(model["decoder_hidden_dim"])
-        if self.legacy_parallel_gated:
-            self.decoder = nn.Sequential(
-                nn.LayerNorm(context_dim),
-                nn.Linear(context_dim, hidden),
-                nn.GELU(),
-                nn.Linear(hidden, n_genes),
-            )
-        else:
-            self.decoder = nn.Sequential(
-                nn.Linear(context_dim, hidden),
-                nn.GELU(),
-                nn.Dropout(float(model["dropout"])),
-                nn.Linear(hidden, n_genes),
-            )
+        self.decoder = nn.Sequential(
+            nn.Linear(context_dim, hidden),
+            nn.GELU(),
+            nn.Dropout(float(model["dropout"])),
+            nn.Linear(hidden, n_genes),
+        )
         self.within = WithinGeneRefiner(
             structure, hidden_dim=int(model["gene_structure_hidden_dim"])
         )
-        between_type = (
-            LegacyBetweenSpotRefiner
-            if self.legacy_parallel_gated
-            else BetweenSpotRefiner
-        )
-        self.between = between_type(
+        self.between = BetweenSpotRefiner(
             n_genes=n_genes,
             context_dim=context_dim,
             gex_dim=int(model["refinement_gex_dim"]),
