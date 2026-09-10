@@ -175,7 +175,11 @@ def validate(
     return values
 
 
-def train(config_path: str | Path, resume: str | Path | None = None) -> Path:
+def train(
+    config_path: str | Path,
+    resume: str | Path | None = None,
+    max_hours: float | None = None,
+) -> Path:
     """Train one configured run until its step or wall-clock limit."""
     config = load_config(config_path)
     seed = int(config["seed"])
@@ -203,6 +207,11 @@ def train(config_path: str | Path, resume: str | Path | None = None) -> Path:
     run_root = run_root.expanduser().resolve()
     (run_root / "checkpoints").mkdir(parents=True, exist_ok=False)
     (run_root / "config.json").write_text(json.dumps(config, indent=2) + "\n")
+    runtime = {
+        "resume": str(Path(resume).expanduser().resolve()) if resume else None,
+        "max_hours": float(max_hours) if max_hours is not None else None,
+    }
+    (run_root / "runtime.json").write_text(json.dumps(runtime, indent=2) + "\n")
     writer = _writer(run_root / "tensorboard")
     train_specs = manifest.for_split("train")
     validation_specs = manifest.for_split("validation")
@@ -216,7 +225,10 @@ def train(config_path: str | Path, resume: str | Path | None = None) -> Path:
     steps_per_slide = max(1, int(training.get("steps_per_slide", 20)))
     field_size = int(config["data"]["field_size"])
     total_steps = int(training["total_steps"])
-    deadline = time.monotonic() + 3600.0 * float(training["max_hours"])
+    runtime_hours = float(training["max_hours"] if max_hours is None else max_hours)
+    if runtime_hours <= 0:
+        raise ValueError("max_hours must be positive")
+    deadline = time.monotonic() + 3600.0 * runtime_hours
     validation_every = int(training["validation_every"])
     checkpoint_every = int(training["checkpoint_every"])
     logging = config.get("tensorboard", {})
@@ -323,8 +335,9 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Train deterministic or WAE-MMD SpatEX model")
     parser.add_argument("--config", required=True)
     parser.add_argument("--resume")
+    parser.add_argument("--max-hours", type=float)
     args = parser.parse_args()
-    train(args.config, args.resume)
+    train(args.config, args.resume, args.max_hours)
 
 
 if __name__ == "__main__":
