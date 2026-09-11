@@ -62,6 +62,7 @@ def comparison_metrics(prediction: np.ndarray, target: np.ndarray) -> dict[str, 
         "pcc": pcc,
         "spearman": spearman,
         "rmse": float(np.sqrt(np.mean((prediction - target) ** 2))),
+        "n_spots": int(len(target)),
     }
 
 
@@ -128,7 +129,8 @@ def main() -> None:
             key = f"prediction__{source['primary']}__{sample_id}"
             source_coords = source["arrays"][f"coordinates__{sample_id}"]
             values = source["arrays"][key][:, index]
-            metrics = comparison_metrics(values, target)
+            source_target = source["arrays"][f"target__{sample_id}"][:, index]
+            metrics = comparison_metrics(values, source_target)
             predictions.append(
                 (source["label"], values, source_coords, metrics)
             )
