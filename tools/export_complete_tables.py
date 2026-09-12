@@ -71,7 +71,9 @@ def metadata(label: str, report: dict[str, Any]) -> dict[str, Any]:
     family = "STPath" if "stpath" in lower else "SpatEX"
     if "parallel_gated" in lower or "legacy" in lower:
         family = "legacy parallel-gated"
-    if "wae" in lower:
+    if "mk_rwae" in lower or "legacy_rwae" in lower:
+        family = "legacy residual WAE"
+    elif "wae" in lower:
         family = "SpatEX WAE"
     return {
         "model": label,
